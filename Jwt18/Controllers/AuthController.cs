@@ -48,7 +48,15 @@ namespace Jwt18.Controllers
         [Authorize]
         public ActionResult Get()
         {
-            return Ok();
+            return Ok("Hey User Welcome");
+        }
+
+
+        [HttpGet("Admin-endpoint")]
+        [Authorize(Roles ="Admin")]
+        public ActionResult AdminCheck()
+        {
+            return Ok("Hey Admin Welcome");
         }
     }
 }

@@ -68,7 +68,10 @@ namespace Jwt18.Services
         {
             var claims = new List<Claim>
             {
-                new Claim(ClaimTypes.Name, user.UserName) 
+                new Claim(ClaimTypes.Name, user.UserName),
+                new Claim(ClaimTypes.Role, user.Roles),
+                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString())
+
                 //name:username here the name is the key and the username is the value provided by the user 
                 //claim is inbuilt in system.security.claim, it is a key value pair
                 //here the claimtypes.name is prebuilt by the microsoft, and the user.username is what we are assigning there 
