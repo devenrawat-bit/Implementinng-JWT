@@ -11,32 +11,52 @@ using System.Text;
 
 namespace Jwt18.Services
 {
-    public class AuthService(AppDbContext context, IConfiguration configuration) 
+    public class AuthService :IAuthService
     {
+        private readonly IConfiguration _configuration;
+        private readonly AppDbContext _context;
+        public AuthService(IConfiguration configuration, AppDbContext context)
+        {
+            _configuration = configuration;
+            _context=context;   
+        }
         public async Task<User?> RegisterAsync(UserDto request)
         {
-            var user = new User();
             //check if the user exist in the database or not 
-            if (await context.users.AnyAsync(u => u.UserName == request.UserName))
+            if (await _context.users.AnyAsync(u => u.UserName == request.UserName))
             {
                 return null;
-            }
-            var hashedPassword = new PasswordHasher<User>().HashPassword(user, request.Password);
+            } //if this is no then we will create new user 
+            var user = new User();
+            user.UserName = request.UserName;
+            user.PasswordHash= new PasswordHasher<User>().HashPassword(user, request.Password);
+            //here we did the <user because the hash will be saved in the user class, Yani hasher ko bata rahe ho ki tum kis model ke liye password hash kar rahe ho.
+            //here the request.password will come from the user 
+
+            //2 user kya hai?
+            // Ye ek User class ka object hai.
+            // Hasher ko ye chahiye, kyunki kuch hashing algorithms user ke kuch details (jaise username, salt, type info, ya metadata) bhi internally use karte hain hash banane ke liye.
+            //Aur verify karte time bhi same user object lagta hai — warna hash verify nahi hoga.
+            await _context.users.AddAsync(user); //this line adds the data to the database but do not save it    
+            await _context.SaveChangesAsync(); //this will save it 
+            //here this is important 
             return user;
         }
+
+        //the await addasync and the savechangesasync is only needed during the register time not in the login time 
 
 
 
         public async Task<string?> LoginAsync(UserDto request)
         {
-            User? user=await context.users.FirstOrDefaultAsync(u=>u.UserName == request.UserName);
+            User? user=await _context.users.FirstOrDefaultAsync(u=>u.UserName == request.UserName);
             if (user is null)
             {
-                return null; 
+                return null; // if comes null it means that the user is not present in the database 
             }
             if (new PasswordHasher<User>().VerifyHashedPassword(user, user.PasswordHash, request.Password)==PasswordVerificationResult.Failed)
             {
-                return null;
+                return null; //if this is null or failed that means the user entered the wrong password, the password hash do not match. This also means that if this condition do not fullfill that means the entered password is correct and the token is now ready to generate
             }
             string token = CreateToken(user);
             return token;
@@ -57,7 +77,7 @@ namespace Jwt18.Services
 
             //creating a secret key 
             //UTF-8 ek encoding format hai jo text (characters) ko bytes (numbers) me convert karta hai.
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(configuration.GetValue<string>("AppSettings:Token")!));
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration.GetValue<string>("AppSettings:Token")!));
             //basically ek security key bana rahi hai (object form me),
             //jo JWT ke signing aur verifying dono ke liye use hoti hai.
             //the above line is converting a string into bytes
@@ -71,9 +91,9 @@ namespace Jwt18.Services
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha512);
 
             var tokenDescriptor = new JwtSecurityToken(
-                issuer: configuration.GetValue<string>("AppSettings:Issuer"),
+                issuer: _configuration.GetValue<string>("AppSettings:Issuer"),
                 //the name of the token provider basically a server id
-                audience: configuration.GetValue<string>("AppSettings:Audience"),
+                audience: _configuration.GetValue<string>("AppSettings:Audience"),
                 //audience tells for whom this token is created for 
                 claims: claims,
                 //here the first one is the inbuilt claims and the second one is the data the claims list contains 

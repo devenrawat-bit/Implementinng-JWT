@@ -1,100 +1,54 @@
 ﻿using Jwt18.Entities;
 using Jwt18.Models;
+using Jwt18.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using System.Threading.Tasks;
 namespace Jwt18.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class AuthController(IConfiguration configuration) : ControllerBase
+    public class AuthController: ControllerBase
     {
         //public static User user=new User(); this is the older way 
-        private static User user = new();//in future we will use the entity framework 
-
+        //private static User user = new();//in future we will use the entity framework 
+        private readonly IAuthService _authService;
+        public AuthController(IAuthService authService)
+        {
+           _authService = authService;  
+        }
         [HttpPost("register")]
-        public ActionResult<User> Register(UserDto request)
+        public async Task<ActionResult<User?>> Register(UserDto request)
         //from the frontend the username and the password will come  
         //Tu usse ek User entity banayega aur password ko hash karega.
         {
-            var hashedPassword = new PasswordHasher<User>()
-                //here we did the <user because the hash will be saved in the user class, Yani hasher ko bata rahe ho ki tum kis model ke liye password hash kar rahe ho.
-                .HashPassword(user, request.Password);
-            //here the request.password will come from the user 
-
-            //2 user kya hai?
-            // Ye ek User class ka object hai.
-            // Hasher ko ye chahiye, kyunki kuch hashing algorithms user ke kuch details (jaise username, salt, type info, ya metadata) bhi internally use karte hain hash banane ke liye.
-            //Aur verify karte time bhi same user object lagta hai — warna hash verify nahi hoga.
-
-            user.UserName = request.UserName;
-            user.PasswordHash = hashedPassword;
+            var user=await _authService.RegisterAsync(request);
+            if (user == null) { return BadRequest("The user already exsist in the database"); }
             return Ok(user);
         }
 
+
+
         [HttpPost("login")]
-        public ActionResult<string> login(UserDto request)
+        public async Task<ActionResult<string>> login(UserDto request)
         //this will return a string,(baad me ye JWT token hoga).
         {
-            if (user.UserName!=request.UserName)
-            {
-                return BadRequest("The user not exist");
-            }
-            if(new PasswordHasher<User>().VerifyHashedPassword(user,user.PasswordHash,request.Password)==PasswordVerificationResult.Failed)
-            {
-                return BadRequest("The password is invalid");
-            }
-            //string token = "Success";
-            string token = CreateToken(user);
-            return Ok(token);
+            
+            var user=await _authService.LoginAsync(request);
+            if (user == null) { return BadRequest("Either the username is wrong or the password is wrong check again"); }
+            return Ok(user);
         }
 
-        private string CreateToken(User user)
+        [HttpGet("test-endpoint")]
+        [Authorize]
+        public ActionResult Get()
         {
-            var claims = new List<Claim>
-            {
-                new Claim(ClaimTypes.Name, user.UserName) 
-                //name:username here the name is the key and the username is the value provided by the user 
-                //claim is inbuilt in system.security.claim, it is a key value pair
-                //here the claimtypes.name is prebuilt by the microsoft, and the user.username is what we are assigning there 
-            };
-
-
-            //creating a secret key 
-            //UTF-8 ek encoding format hai jo text (characters) ko bytes (numbers) me convert karta hai.
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(configuration.GetValue<string>("AppSettings:Token")!));
-            //basically ek security key bana rahi hai (object form me),
-            //jo JWT ke signing aur verifying dono ke liye use hoti hai.
-            //the above line is converting a string into bytes
-
-
-            //JWT token ke andar ek signature hota hai.
-            //Us signature ko banane ke liye ek secret key chahiye hoti hai —
-
-            //here we are creating signing credential
-            //Matlab ye line me hum batate hain kaunsa key aur kaunsa algorithm use karke JWT ka signature generate karna hai.
-            var creds =new SigningCredentials(key,SecurityAlgorithms.HmacSha512);
-
-            var tokenDescriptor = new JwtSecurityToken(
-                issuer: configuration.GetValue<string>("AppSettings:Issuer"),
-                //the name of the token provider basically a server id
-                audience: configuration.GetValue<string>("AppSettings:Audience"),
-                //audience tells for whom this token is created for 
-                claims:claims,
-                //here the first one is the inbuilt claims and the second one is the data the claims list contains 
-                expires: DateTime.UtcNow.AddDays(1),
-                //every token has it expiry once it get expired the user have to do the login again not the register but only the login 
-                signingCredentials: creds
-                //ek key bnate hai us key ki help se sign karte hai token ko then the token is finally passed   
-                );
-            return new JwtSecurityTokenHandler().WriteToken(tokenDescriptor);
-            //this is the final step in which the token is created and it is converted into the string format 
-            //Ab JwtSecurityTokenHandler() aaya aur bola: “Okay bhai, mai is sabko ek proper JWT format me pack kar deta hu.
-
-            //WriteToken() method us data ko header + payload + signature format me encode karta hai aur ek long JWT string bana ke deta hai
+            return Ok();
         }
     }
 }
