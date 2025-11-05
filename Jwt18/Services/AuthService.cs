@@ -7,7 +7,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
+using static System.Runtime.InteropServices.JavaScript.JSType;
 
 namespace Jwt18.Services
 {
@@ -47,7 +49,7 @@ namespace Jwt18.Services
 
 
 
-        public async Task<string?> LoginAsync(UserDto request)
+        public async Task<TokenResponseDto?> LoginAsync(UserDto request)
         {
             User? user=await _context.users.FirstOrDefaultAsync(u=>u.UserName == request.UserName);
             if (user is null)
@@ -58,11 +60,37 @@ namespace Jwt18.Services
             {
                 return null; //if this is null or failed that means the user entered the wrong password, the password hash do not match. This also means that if this condition do not fullfill that means the entered password is correct and the token is now ready to generate
             }
-            string token = CreateToken(user);
+            var token = new TokenResponseDto
+            {
+                AccessToken = CreateToken(user),
+                RefreshToken = await GenerateAndSaveRefreshToken(user)//use await keyword as the method there is the async 
+            };
             return token;
+            //now when the user will login the access token and the refresh token both will be passed to the user 
         }
 
+        /// <summary>
+        /// Method to create a refresh token 
+        /// </summary>
+        /// <param name="user"></param>
+        /// <returns></returns>
+        private async Task<string> GenerateAndSaveRefreshToken(User user)
+        {
+            var randomNumber=new byte[32];
+            using var rng = RandomNumberGenerator.Create();
+            //Ye line cryptographically secure random number generator banati hai.
+            //Normal Random() use nahi kiya gaya, kyunki wo predictable hota hai.
+            //RandomNumberGenerator cryptographic-level randomness deta hai —
+            //yaani koi bhi hacker guess nahi kar sakta ki next number kya hoga.
 
+            rng.GetBytes(randomNumber);
+            //Yaha ye generator array ko fill karta hai random bytes se.
+            var refreshToken = Convert.ToBase64String(randomNumber);
+            user.RefreshToken = refreshToken;
+            user.RefreshTokenExpiry = DateTime.UtcNow.AddDays(2);
+            await _context.SaveChangesAsync();
+            return refreshToken;        
+        }
 
         private string CreateToken(User user)
         {
@@ -112,5 +140,20 @@ namespace Jwt18.Services
             //WriteToken() method us data ko header + payload + signature format me encode karta hai aur ek long JWT string bana ke deta hai
         }
 
+
+        public async Task<TokenResponseDto> RefreshTokenAsync(RefreshTokenRequestDto request)
+        {
+           var user=await _context.users.FindAsync(request.UserID);
+            if (user == null || user.RefreshToken != request.RefreshToken ||user.RefreshTokenExpiry<DateTime.UtcNow)
+            {
+                return null;
+            }
+            var token = new TokenResponseDto
+            {
+                AccessToken = CreateToken(user),
+                RefreshToken = await GenerateAndSaveRefreshToken(user)
+            };
+            return token;
+        }
     }
 }

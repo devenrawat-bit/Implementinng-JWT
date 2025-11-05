@@ -32,10 +32,17 @@ namespace Jwt18.Controllers
             return Ok(user);
         }
 
-
+        [HttpPost("Refresh-Token")]
+        public async Task<ActionResult<TokenResponseDto>> RefreshToken(RefreshTokenRequestDto request)
+        {
+            var token=await _authService.RefreshTokenAsync(request);
+            if (token is null) 
+            { return BadRequest("Invalid or Expired token"); }
+            return Ok(token);
+        }
 
         [HttpPost("login")]
-        public async Task<ActionResult<string>> login(UserDto request)
+        public async Task<ActionResult<TokenResponseDto>> login(UserDto request)
         //this will return a string,(baad me ye JWT token hoga).
         {
             
@@ -58,5 +65,7 @@ namespace Jwt18.Controllers
         {
             return Ok("Hey Admin Welcome");
         }
+
+
     }
 }
