@@ -1,56 +1,48 @@
-﻿using Jwt18.Entities;
+﻿using Jwt18.Data;
+using Jwt18.Entities;
 using Jwt18.Models;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
-namespace Jwt18.Controllers
+
+namespace Jwt18.Services
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class AuthController(IConfiguration configuration) : ControllerBase
+    public class AuthService(AppDbContext context, IConfiguration configuration) 
     {
-        //public static User user=new User(); this is the older way 
-        private static User user = new();//in future we will use the entity framework 
-
-        [HttpPost("register")]
-        public ActionResult<User> Register(UserDto request)
-        //from the frontend the username and the password will come  
-        //Tu usse ek User entity banayega aur password ko hash karega.
+        public async Task<User?> RegisterAsync(UserDto request)
         {
-            var hashedPassword = new PasswordHasher<User>()
-                //here we did the <user because the hash will be saved in the user class, Yani hasher ko bata rahe ho ki tum kis model ke liye password hash kar rahe ho.
-                .HashPassword(user, request.Password);
-            //here the request.password will come from the user 
-
-            //2 user kya hai?
-            // Ye ek User class ka object hai.
-            // Hasher ko ye chahiye, kyunki kuch hashing algorithms user ke kuch details (jaise username, salt, type info, ya metadata) bhi internally use karte hain hash banane ke liye.
-            //Aur verify karte time bhi same user object lagta hai — warna hash verify nahi hoga.
-
-            user.UserName = request.UserName;
-            user.PasswordHash = hashedPassword;
-            return Ok(user);
+            var user = new User();
+            //check if the user exist in the database or not 
+            if (await context.users.AnyAsync(u => u.UserName == request.UserName))
+            {
+                return null;
+            }
+            var hashedPassword = new PasswordHasher<User>().HashPassword(user, request.Password);
+            return user;
         }
 
-        [HttpPost("login")]
-        public ActionResult<string> login(UserDto request)
-        //this will return a string,(baad me ye JWT token hoga).
+
+
+        public async Task<string?> LoginAsync(UserDto request)
         {
-            if (user.UserName!=request.UserName)
+            User? user=await context.users.FirstOrDefaultAsync(u=>u.UserName == request.UserName);
+            if (user is null)
             {
-                return BadRequest("The user not exist");
+                return null; 
             }
-            if(new PasswordHasher<User>().VerifyHashedPassword(user,user.PasswordHash,request.Password)==PasswordVerificationResult.Failed)
+            if (new PasswordHasher<User>().VerifyHashedPassword(user, user.PasswordHash, request.Password)==PasswordVerificationResult.Failed)
             {
-                return BadRequest("The password is invalid");
+                return null;
             }
-            //string token = "Success";
             string token = CreateToken(user);
-            return Ok(token);
+            return token;
         }
+
+
 
         private string CreateToken(User user)
         {
@@ -76,14 +68,14 @@ namespace Jwt18.Controllers
 
             //here we are creating signing credential
             //Matlab ye line me hum batate hain kaunsa key aur kaunsa algorithm use karke JWT ka signature generate karna hai.
-            var creds =new SigningCredentials(key,SecurityAlgorithms.HmacSha512);
+            var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha512);
 
             var tokenDescriptor = new JwtSecurityToken(
                 issuer: configuration.GetValue<string>("AppSettings:Issuer"),
                 //the name of the token provider basically a server id
                 audience: configuration.GetValue<string>("AppSettings:Audience"),
                 //audience tells for whom this token is created for 
-                claims:claims,
+                claims: claims,
                 //here the first one is the inbuilt claims and the second one is the data the claims list contains 
                 expires: DateTime.UtcNow.AddDays(1),
                 //every token has it expiry once it get expired the user have to do the login again not the register but only the login 
@@ -96,5 +88,6 @@ namespace Jwt18.Controllers
 
             //WriteToken() method us data ko header + payload + signature format me encode karta hai aur ek long JWT string bana ke deta hai
         }
+
     }
 }
